@@ -5,15 +5,23 @@ var times = [];
 var available = 0;
 var subtractions = 0;
 var totalHours = 0;
+var positiveHours = [];
+var negativeHours = [];
 
+function addToSheet(i){
+// need to test if all staff were working during that week. count how many unique 'people' had work that week and if any of that work was 'out of office'
+    SpreadsheetApp.getActiveSheet().getRange('Dashboard!C' + (i+2)).setValue((available * 40) - subtractions);
+    SpreadsheetApp.getActiveSheet().getRange('Dashboard!B' + (i+2)).setValue(totalHours);
+    SpreadsheetApp.getActiveSheet().getRange('Dashboard!D' + (i+2)).setValue(totalHours/((available * 40) - subtractions));
+}
 function checkAvailableHours(datesToAdd){
     // count how many people have hours logged for that date
   available = 0;
-  var compare = [];
     var check = detailReports.filter(function(record){
-        return record.dateTime === datesToAdd;
+      if (record.dateTime === datesToAdd){ 
+        return record;
+      }
     });
-  
   for(var i = 0; i < people.length; i++){
     var person = check.filter(function(record){
       return record.person == people[i].person;
@@ -22,33 +30,34 @@ function checkAvailableHours(datesToAdd){
       available++;
     }
   }
-  checkSubtractions(check);
-  checkTotalHours(check);
 }
-function checkSubtractions(check){
-    // check to see if any of the hours are negative 
-  var minus = check.filter(function(record){
-    return record.hours < 0; 
-  });
-  subtractions = minus.reduce(function(accumulator, currentValue){
-    return accumulator + currentValue.hours; 
-  }, 0)
+function checkSubtractions(dateToAdd){
+  var total = 0;
+  for (var i = 0; i < negativeHours.length; i++){
+    if(negativeHours[i].dateTime === dateToAdd){
+      total = total + negativeHours[i].hours;
+    }
+  }
+  subtractions = total; 
 }
-function checkTotalHours(check){
-  var plus = check.filter(function(record){
-    return record.hours > 0;
-  });
-  totalHours = plus.reduce(function(accumulator, currentValue){
-    return accumulator + currentValue.hours;
-  },0);
-  Logger.log(totalHours)
+function checkTotalHours(dateToAdd){
+  totalHours = 0;
+  for (var i = 0; i < positiveHours.length; i++){
+    if(positiveHours[i].dateTime === dateToAdd){
+      if (positiveHours[i].project === 'Out of Office' && positiveHours[i].projects === 'Holiday' && positiveHours[i].projects === 'Personal'){
+      } else { 
+        totalHours = totalHours + positiveHours[i].hours;
+      }
+    }
+  }
 }
 function getDetails(){
   for(var i = 0; i < people.length; i++){
     var sheet = SpreadsheetApp.openByUrl(people[i].URL);
-    var dates = sheet.getActiveSheet().getRange('Project_Log!B2:B100').getValues();
-    var projects = sheet.getActiveSheet().getRange('Project_Log!A2:A100').getValues();
-    var hours = sheet.getActiveSheet().getRange('Project_Log!C2:C100').getValues();
+    var dates = sheet.getActiveSheet().getRange('Project_Log!B2:B1000').getValues();
+    var projects = sheet.getActiveSheet().getRange('Project_Log!A2:A1000').getValues();
+    var hours = sheet.getActiveSheet().getRange('Project_Log!C2:C1000').getValues();
+    
     for(var j = 0; j < dates.length; j++){
       if(typeof dates[j][0] === 'object'){
         // converts dates to milliseconds so that they can be compared 
@@ -62,10 +71,16 @@ function getDetails(){
            var smallDate = date.slice(4,16);
           datesToAdd.push({date: smallDate, dateTime: timeToAdd});
         }
-        if (projects[j][0] == 'Out of Office'){
-          hours[j][0] = 0 - hours[j][0];
+        if (projects[j][0] == 'Out of Office' || projects[j][0] == 'Holiday' || projects[j][0] == 'Personal'){
+          //detailReports.push({person: currentPerson, dateTime: timeToAdd, date: smallDate, hours: 0, project: projects[j][0]});
+          negativeHours.push({hours: hours[j][0], dateTime: timeToAdd,  project: projects[j][0]});
+          positiveHours.push({hours: 0, dateTime: timeToAdd, project: projects[j][0]});
+          Logger.log('project: ' + projects[j][0] + hours[j][0]);
         }
-        detailReports.push({person: currentPerson, dateTime: timeToAdd, date: smallDate, hours: hours[j][0], project: projects[j][0]});
+         else {
+         detailReports.push({person: currentPerson, dateTime: timeToAdd, date: smallDate, hours: hours[j][0], project: projects[j][0]});
+           positiveHours.push({hours: hours[j][0], dateTime: timeToAdd, project: projects[j][0]});
+         }
       }
     }
     }
@@ -78,20 +93,20 @@ function getPeople() {
       people.push({person: sheet[i][0], URL: sheet[i][1]});
     }
   }
+  Logger.log(people);
 }
 function populateData(){
   for (var i = 0; i < datesToAdd.length; i++){
     SpreadsheetApp.getActiveSheet().getRange('Dashboard!A' + (i+2)).setValue(datesToAdd[i].date);
     checkAvailableHours(datesToAdd[i].dateTime);
-    // need to test if all staff were working during that week. count how many unique 'people' had work that week and if any of that work was 'out of office'
-    SpreadsheetApp.getActiveSheet().getRange('Dashboard!C' + (i+2)).setValue((available * 35) + subtractions);
-    SpreadsheetApp.getActiveSheet().getRange('Dashboard!B' + (i+2)).setValue(totalHours);
-    SpreadsheetApp.getActiveSheet().getRange('Dashboard!D' + (i+2)).setValue(totalHours/((available * 35) + subtractions));
+    checkSubtractions(datesToAdd[i].dateTime);
+    checkTotalHours(datesToAdd[i].dateTime); 
+    addToSheet(i);
   }  
 }
 
 function onEdit(){
-   getPeople();
+  getPeople();
   getDetails();
   populateData();
 }
